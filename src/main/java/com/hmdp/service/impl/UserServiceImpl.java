@@ -51,7 +51,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         //保存验证码到Redis
         stringRedisTemplate.opsForValue().set(LOGIN_CODE_KEY + phone, code, LOGIN_CODE_TTL, TimeUnit.MINUTES);
         //发送验证码
-        log.debug("发送短信验证码成功：{}", code);
+        log.debug("发送短信验证码成功,验证码有效期10分钟：{}", code);
         return Result.ok();
 
     }
@@ -84,6 +84,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
                         .setFieldValueEditor((fieldName, fieldValue) -> fieldValue.toString()));
         //存储
         stringRedisTemplate.opsForHash().putAll(LOGIN_USER_KEY+token,userMap);
+        log.info("存储token到Redis成功，token值为：{}",token);
         //设置token有效期
         stringRedisTemplate.expire(LOGIN_USER_KEY+token,LOGIN_USER_TTL,TimeUnit.MINUTES);
         //返回token

@@ -30,7 +30,7 @@ public class MvcConfig implements WebMvcConfigurer{
                         "/user/code",
                         "/user/login"
                 ).order(1);
-        // token刷新的拦截器
+        // token刷新的拦截器  .order(0) 为拦截器执行属顺序  所以下面这个拦截器先执行
         registry.addInterceptor(new RefreshTokenInterceptor(stringRedisTemplate)).addPathPatterns("/**").order(0);
     }
 }
