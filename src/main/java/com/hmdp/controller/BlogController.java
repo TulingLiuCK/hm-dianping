@@ -87,4 +87,10 @@ public class BlogController {
         logger.info("records参数："+records.toString());
         return Result.ok(records);
     }
+
+
+    @GetMapping("/of/follow") //第一次时间戳为0
+    public Result queryBlogOfFollow(@RequestParam("lastId")Long max,@RequestParam(value = "offset",defaultValue = "0")Integer offset){
+        return blogService.queryBlogOfFollow(max,offset);
+    }
 }
