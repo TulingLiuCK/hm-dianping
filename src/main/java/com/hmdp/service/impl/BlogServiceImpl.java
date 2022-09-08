@@ -7,13 +7,16 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hmdp.dto.Result;
 import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.Blog;
+import com.hmdp.entity.Follow;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.BlogMapper;
 import com.hmdp.service.IBlogService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.service.IFollowService;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
+import com.sun.org.apache.regexp.internal.RE;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,6 +29,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.hmdp.utils.RedisConstants.BLOG_LIKED_KEY;
+import static com.hmdp.utils.RedisConstants.FEED_KEY;
 
 /**
  * <p>
@@ -42,6 +46,8 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     private IUserService userService;
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
+    @Autowired
+    private IFollowService followService;
 
     @Override
     public Result queryHotBlog(Integer current) {
@@ -77,7 +83,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     private void isBlogLiked(Blog blog) {
         //判断当前用户是否点赞
         UserDTO user = UserHolder.getUser();
-        if (user == null ){
+        if (user == null) {
             //用户未登录，无需查询是否点赞
             return;
         }
@@ -97,16 +103,16 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
             //3如果没点， +1
             boolean isSuccess = update().setSql("liked = liked +1").eq("id", id).update();
             //3.1保存用户到Redis的set集合 zadd key value score
-            if (isSuccess){
-                stringRedisTemplate.opsForZSet().add(BLOG_LIKED_KEY+id, userId.toString(),System.currentTimeMillis());
+            if (isSuccess) {
+                stringRedisTemplate.opsForZSet().add(BLOG_LIKED_KEY + id, userId.toString(), System.currentTimeMillis());
             }
         } else {
             //4如果已经点赞， 取消点赞
             //4.1数据库点赞数-1
             boolean isSuccess = update().setSql("liked = liked - 1").eq("id", id).update();
-            if (isSuccess){
+            if (isSuccess) {
                 //将用户从Redis的set集合删除
-                stringRedisTemplate.opsForZSet().remove(BLOG_LIKED_KEY+id,userId.toString());
+                stringRedisTemplate.opsForZSet().remove(BLOG_LIKED_KEY + id, userId.toString());
             }
         }
         log.info("点赞功能完成");
@@ -117,18 +123,41 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
     public Result queryBlogLikes(Long id) {
         //查询top5的点赞用户 zrange key 0 4
         Set<String> top5 = stringRedisTemplate.opsForZSet().range(BLOG_LIKED_KEY + id, 0, 4);
-        if (top5 == null || top5.isEmpty()){
+        if (top5 == null || top5.isEmpty()) {
             return Result.ok(Collections.emptyList());
         }
         //2解析出用户id
         List<Long> ids = top5.stream().map(Long::valueOf).collect(Collectors.toList());
         //3根据用户id查询用户
         String idStr = StrUtil.join(",", ids);
-        List<UserDTO> userDtos = userService.query().in("id", ids).last("ORDER BY FIELD(id,"+idStr+")").list()
+        List<UserDTO> userDtos = userService.query().in("id", ids).last("ORDER BY FIELD(id," + idStr + ")").list()
                 .stream()
                 .map(user -> BeanUtil.copyProperties(user, UserDTO.class)).collect(Collectors.toList());
         //返回
         return Result.ok(userDtos);
+    }
+
+    @Override
+    public Result saveBlog(Blog blog) {
+        // 获取登录用户
+        UserDTO user = UserHolder.getUser();
+        blog.setUserId(user.getId());
+        // 保存探店博文
+        boolean isSuccess = save(blog);
+        if (!isSuccess) {
+            return Result.fail("保存笔记失败");
+        }
+        //查询笔记作者的所有粉丝 select * from tb_follow where follow_user_id = ?
+        List<Follow> follows = followService.query().eq("follow_user_id", user.getId()).list();
+        //4推送笔记id给所有粉丝
+        for (Follow follow : follows) {
+            //获取粉丝ID
+            Long userId = follow.getUserId();
+            //推送 sotedset
+            stringRedisTemplate.opsForZSet().add(FEED_KEY+userId, blog.getId().toString(), System.currentTimeMillis());
+        }
+        // 返回id
+        return Result.ok(blog.getId());
     }
 
     private void queryBlogUser(Blog blog) {
