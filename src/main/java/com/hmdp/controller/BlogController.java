@@ -73,8 +73,12 @@ public class BlogController {
     public Result queryBlogById(@PathVariable("id") Long id){
         return blogService.queryBlogById(id);
     }
+    /**
+     * 点赞所有人
+     */
     @GetMapping("/likes/{id}")
-    public List<UserDTO> getLikesOf5(@PathVariable("id")Long id){
-        return null;
+    public Result queryBlogLikes(@PathVariable("id")Long id){
+        return blogService.queryBlogLikes(id);
     }
+
 }
